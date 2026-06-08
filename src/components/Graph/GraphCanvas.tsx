@@ -82,8 +82,23 @@ export default function GraphCanvas({
     // Short, consistent link distance keeps connected clusters tight
     fgRef.current.d3Force('link')?.distance(40).strength(0.8);
 
-    // Gentle pull toward origin so isolated nodes don't fly to the edges
-    fgRef.current.d3Force('center')?.strength(0.05);
+    // Pull toward origin — stronger so isolated nodes stay near the main cluster
+    fgRef.current.d3Force('center')?.strength(0.15);
+
+    // Hard boundary: nodes beyond 300 units get pulled back proportionally
+    const allNodes = graphData.nodes;
+    fgRef.current.d3Force('bound', (alpha: number) => {
+      for (const node of allNodes) {
+        const n = node as any;
+        const dist = Math.sqrt((n.x ?? 0) ** 2 + (n.y ?? 0) ** 2 + (n.z ?? 0) ** 2) || 1;
+        if (dist > 300) {
+          const pull = alpha * 0.3 * (dist - 300) / dist;
+          n.vx = (n.vx ?? 0) - n.x * pull;
+          n.vy = (n.vy ?? 0) - n.y * pull;
+          n.vz = (n.vz ?? 0) - n.z * pull;
+        }
+      }
+    });
 
     // Soft clustering: same-language nodes drift toward each other (weaker than before)
     const repoNodes = graphData.nodes.filter((n) => !n.isFileNode);
