@@ -12,14 +12,9 @@ interface Props {
   profile: Record<string, unknown> | null;
   username: string;
   token?: string;
-  loadingDeps?: boolean;
   selectedNode: GraphNode | null;
   onSelectNode: (node: GraphNode | null) => void;
   onBack: () => void;
-}
-
-function fileNodeId(repoName: string, filePath: string): string {
-  return `${repoName}::file::${filePath}`;
 }
 
 function fileColor(file: RepoFile): string {
@@ -32,7 +27,7 @@ function fileColor(file: RepoFile): string {
     swift: '#F05138', kt: '#A97BFF', html: '#e34c26', css: '#563d7c',
     scss: '#c6538c', sh: '#89e051', vue: '#41B883', svelte: '#FF3E00',
     json: '#cbcb41', md: '#94a3b8', yml: '#cb171e', yaml: '#cb171e',
-    toml: '#9c4221', lock: '#6b7280', gitignore: '#6b7280',
+    toml: '#9c4221', lock: '#6b7280',
   };
   return extColors[ext] ?? '#64748b';
 }
@@ -42,7 +37,6 @@ export default function GraphView({
   profile,
   username,
   token,
-  loadingDeps,
   selectedNode,
   onSelectNode,
   onBack,
@@ -90,13 +84,14 @@ export default function GraphView({
     expandedRepos.forEach((repoName) => {
       const files = repoFiles.get(repoName) ?? [];
       files.forEach((file) => {
-        const id = fileNodeId(repoName, file.path);
+        const id = `${repoName}::file::${file.path}`;
         fileNodes.push({
           id,
           name: file.name,
           val: file.type === 'dir' ? 1.2 : 0.6,
           color: fileColor(file),
           group: 'file',
+          nodeType: 'file',
           isFileNode: true,
           fileType: file.type,
           filePath: file.path,
@@ -120,6 +115,7 @@ export default function GraphView({
   }, [graphData, expandedRepos, repoFiles]);
 
   const stats = useMemo(() => getGraphStats(combinedGraphData), [combinedGraphData]);
+
   const languages = useMemo(
     () =>
       [...new Set(graphData.nodes.map((n) => n.repo?.language).filter(Boolean) as string[])].sort(),
@@ -183,7 +179,7 @@ export default function GraphView({
         onToggleExpand={() => selectedNode && toggleExpand(selectedNode.id)}
       />
 
-      <StatsBar stats={stats} loadingDeps={loadingDeps} />
+      <StatsBar stats={stats} />
     </div>
   );
 }

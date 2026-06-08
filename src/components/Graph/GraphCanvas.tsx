@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
 import * as THREE from 'three';
-import type { GraphData, GraphNode, GraphLink } from '../../types';
+import type { GraphData, GraphNode, GraphLink, DomainKey } from '../../types';
 import { DOMAINS } from '../../lib/domainClassifier';
 
 interface Props {
@@ -11,6 +11,25 @@ interface Props {
   selectedLanguage: string;
   onSelectNode: (node: GraphNode | null) => void;
 }
+
+// Evenly-spaced points on a sphere via Fibonacci lattice
+function fibSphere(total: number, idx: number, radius: number): [number, number, number] {
+  const golden = (1 + Math.sqrt(5)) / 2;
+  const theta = Math.acos(1 - (2 * (idx + 0.5)) / total);
+  const phi = (2 * Math.PI * idx) / golden;
+  return [
+    radius * Math.sin(theta) * Math.cos(phi),
+    radius * Math.sin(theta) * Math.sin(phi),
+    radius * Math.cos(theta),
+  ];
+}
+
+// Pre-compute centroid for each domain key — spread around a sphere
+const DOMAIN_KEYS = Object.keys(DOMAINS) as DomainKey[];
+const DOMAIN_CENTROIDS: Record<string, [number, number, number]> = {};
+DOMAIN_KEYS.forEach((k, i) => {
+  DOMAIN_CENTROIDS[k] = fibSphere(DOMAIN_KEYS.length, i, 180);
+});
 
 function createGlowTexture(): THREE.Texture {
   const size = 128;
@@ -36,6 +55,25 @@ function linkKey(l: GraphLink): string {
   return [nodeId(l.source), nodeId(l.target)].sort().join('|||');
 }
 
+function domainGlowColor(node: GraphNode): string {
+  const primaryDomain = (node as any).primaryDomain as DomainKey | null;
+  if (primaryDomain && DOMAINS[primaryDomain]) return DOMAINS[primaryDomain].color;
+  return node.color;
+}
+
+function buildHoverLabel(node: GraphNode): string {
+  const parts: string[] = [node.name];
+  const domains = node.domains ?? [];
+  if (domains.length > 0) {
+    parts.push(domains.map((d) => `${DOMAINS[d]?.icon ?? ''} ${DOMAINS[d]?.name ?? d}`).join('  ·  '));
+  }
+  const topics = node.repo?.topics ?? [];
+  if (topics.length > 0) {
+    parts.push(topics.slice(0, 6).join(', '));
+  }
+  return parts.join('\n');
+}
+
 export default function GraphCanvas({
   graphData,
   selectedNode,
@@ -46,7 +84,7 @@ export default function GraphCanvas({
   const fgRef = useRef<any>(null);
   const glowTexture = useRef<THREE.Texture | null>(null);
   const nodeMaterials = useRef<Map<string, THREE.MeshPhongMaterial>>(new Map());
-  const glowMaterials = useRef<Map<string, THREE.SpriteMaterial>>(new Map());
+  const domainGlowMaterials = useRef<Map<string, THREE.SpriteMaterial>>(new Map());
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [highlightNodes, setHighlightNodes] = useState(new Set<string>());
@@ -65,37 +103,38 @@ export default function GraphCanvas({
     return () => observer.disconnect();
   }, []);
 
-  // Auto-zoom after graph settles
+  // Zoom to fit after graph settles
   useEffect(() => {
     if (graphData.nodes.length > 0 && fgRef.current) {
-      const t = setTimeout(() => fgRef.current?.zoomToFit(1200, 80), 1200);
+      const t = setTimeout(() => fgRef.current?.zoomToFit(1200, 60), 1500);
       return () => clearTimeout(t);
     }
   }, [graphData.nodes.length]);
 
-  // Language clustering force: same-language repo nodes are attracted to each other
+  // Domain clustering force + repulsion
   useEffect(() => {
     if (!fgRef.current) return;
-    const repoNodes = graphData.nodes.filter((n) => !n.isFileNode);
 
-    fgRef.current.d3Force('cluster', (alpha: number) => {
-      for (let i = 0; i < repoNodes.length; i++) {
-        for (let j = i + 1; j < repoNodes.length; j++) {
-          const a = repoNodes[i] as any;
-          const b = repoNodes[j] as any;
-          if (repoNodes[i].group !== repoNodes[j].group || repoNodes[i].group === 'Other') continue;
-          const dx = (b.x ?? 0) - (a.x ?? 0);
-          const dy = (b.y ?? 0) - (a.y ?? 0);
-          const dz = (b.z ?? 0) - (a.z ?? 0);
-          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-          const strength = alpha * 0.06;
-          a.vx = (a.vx ?? 0) + (dx / dist) * strength;
-          a.vy = (a.vy ?? 0) + (dy / dist) * strength;
-          a.vz = (a.vz ?? 0) + (dz / dist) * strength;
-          b.vx = (b.vx ?? 0) - (dx / dist) * strength;
-          b.vy = (b.vy ?? 0) - (dy / dist) * strength;
-          b.vz = (b.vz ?? 0) - (dz / dist) * strength;
-        }
+    const repoNodes = graphData.nodes.filter((n) => n.nodeType === 'repo' || !n.nodeType);
+
+    // Strong repulsion so nodes spread out
+    fgRef.current.d3Force('charge')?.strength(-180);
+    fgRef.current.d3Force('link')?.distance(60).strength(0.3);
+
+    // Custom domain clustering force — pulls each repo toward its domain centroid
+    fgRef.current.d3Force('domainCluster', (alpha: number) => {
+      for (const node of repoNodes) {
+        const n = node as any;
+        const primaryDomain = (node as any).primaryDomain as DomainKey | null;
+        if (!primaryDomain) continue;
+        const [cx, cy, cz] = DOMAIN_CENTROIDS[primaryDomain] ?? [0, 0, 0];
+        const dx = cx - (n.x ?? 0);
+        const dy = cy - (n.y ?? 0);
+        const dz = cz - (n.z ?? 0);
+        const strength = alpha * 0.08;
+        n.vx = (n.vx ?? 0) + dx * strength;
+        n.vy = (n.vy ?? 0) + dy * strength;
+        n.vz = (n.vz ?? 0) + dz * strength;
       }
     });
   }, [graphData.nodes]);
@@ -103,25 +142,8 @@ export default function GraphCanvas({
   // Clear material refs on data change
   useEffect(() => {
     nodeMaterials.current.clear();
-    glowMaterials.current.clear();
+    domainGlowMaterials.current.clear();
   }, [graphData]);
-
-  const updateMaterials = useCallback((highlighted: Set<string>, filtered: Set<string>) => {
-    nodeMaterials.current.forEach((mat, id) => {
-      const inFilter = filtered.size === 0 || filtered.has(id);
-      const inHighlight = highlighted.size === 0 || highlighted.has(id);
-      const visible = inFilter && inHighlight;
-      mat.opacity = visible ? 1 : inFilter ? 0.06 : 0.02;
-      mat.emissiveIntensity = visible ? 0.7 : 0.04;
-      mat.needsUpdate = true;
-    });
-    glowMaterials.current.forEach((mat, id) => {
-      const inFilter = filtered.size === 0 || filtered.has(id);
-      const inHighlight = highlighted.size === 0 || highlighted.has(id);
-      mat.opacity = inFilter && inHighlight ? 0.5 : 0.01;
-      mat.needsUpdate = true;
-    });
-  }, []);
 
   const filteredNodes = useCallback((): Set<string> => {
     const q = searchQuery.toLowerCase().trim();
@@ -143,6 +165,23 @@ export default function GraphCanvas({
     );
   }, [graphData.nodes, searchQuery, selectedLanguage]);
 
+  const updateMaterials = useCallback((highlighted: Set<string>, filtered: Set<string>) => {
+    nodeMaterials.current.forEach((mat, id) => {
+      const inFilter = filtered.size === 0 || filtered.has(id);
+      const inHighlight = highlighted.size === 0 || highlighted.has(id);
+      const visible = inFilter && inHighlight;
+      mat.opacity = visible ? 1 : inFilter ? 0.06 : 0.02;
+      mat.emissiveIntensity = visible ? 0.7 : 0.04;
+      mat.needsUpdate = true;
+    });
+    domainGlowMaterials.current.forEach((mat, id) => {
+      const inFilter = filtered.size === 0 || filtered.has(id);
+      const inHighlight = highlighted.size === 0 || highlighted.has(id);
+      mat.opacity = inFilter && inHighlight ? 0.45 : 0.01;
+      mat.needsUpdate = true;
+    });
+  }, []);
+
   useEffect(() => {
     updateMaterials(highlightNodes, filteredNodes());
   }, [searchQuery, selectedLanguage, filteredNodes, highlightNodes, updateMaterials]);
@@ -156,7 +195,7 @@ export default function GraphCanvas({
         return;
       }
       const gn = node as GraphNode;
-      if (gn.isFileNode) return; // don't highlight on file node hover
+      if (gn.isFileNode) return;
       const newNodes = new Set<string>([gn.id]);
       const newLinks = new Set<string>();
       graphData.links.forEach((link) => {
@@ -180,7 +219,6 @@ export default function GraphCanvas({
     (node: any) => {
       const gn = node as GraphNode;
       if (gn.isFileNode) {
-        // Open file in GitHub
         if (gn.fileUrl) window.open(gn.fileUrl, '_blank', 'noopener');
         return;
       }
@@ -193,107 +231,105 @@ export default function GraphCanvas({
     [selectedNode, onSelectNode]
   );
 
-  const nodeThreeObject = useCallback((node: any): THREE.Object3D => {
-    const gn = node as GraphNode;
-    const color = new THREE.Color(gn.color);
+  const nodeThreeObject = useCallback(
+    (node: any): THREE.Object3D => {
+      const gn = node as GraphNode;
 
-    // File nodes: small, no glow
-    if (gn.isFileNode) {
-      const size = gn.fileType === 'dir' ? 2.2 : 1.4;
-      const mat = new THREE.MeshPhongMaterial({
-        color,
-        emissive: color,
-        emissiveIntensity: 0.4,
+      // File nodes: small, simple
+      if (gn.isFileNode) {
+        const color = new THREE.Color(gn.color);
+        const size = gn.fileType === 'dir' ? 2.2 : 1.4;
+        const mat = new THREE.MeshPhongMaterial({
+          color,
+          emissive: color,
+          emissiveIntensity: 0.4,
+          transparent: true,
+          opacity: 0.75,
+          shininess: 60,
+        });
+        nodeMaterials.current.set(gn.id, mat);
+        const shape = gn.fileType === 'dir'
+          ? new THREE.OctahedronGeometry(size, 0)
+          : new THREE.SphereGeometry(size, 8, 8);
+        return new THREE.Mesh(shape, mat);
+      }
+
+      // Repo nodes: core sphere + language glow + domain-colored outer glow
+      const langColor = new THREE.Color(gn.color);
+      const glowColor = new THREE.Color(domainGlowColor(gn));
+      const size = Math.max(3, Math.cbrt(gn.val) * 3.5);
+      const group = new THREE.Group();
+
+      // Core sphere (language color)
+      const coreMat = new THREE.MeshPhongMaterial({
+        color: langColor,
+        emissive: langColor,
+        emissiveIntensity: 0.7,
         transparent: true,
-        opacity: 0.75,
-        shininess: 60,
+        opacity: 1,
+        shininess: 120,
       });
-      nodeMaterials.current.set(gn.id, mat);
-      const shape = gn.fileType === 'dir'
-        ? new THREE.OctahedronGeometry(size, 0)
-        : new THREE.SphereGeometry(size, 8, 8);
-      return new THREE.Mesh(shape, mat);
-    }
+      nodeMaterials.current.set(gn.id, coreMat);
+      group.add(new THREE.Mesh(new THREE.SphereGeometry(size, 20, 20), coreMat));
 
-    // Repo nodes: glowing spheres
-    const size = Math.max(3, Math.cbrt(gn.val) * 3.5);
-    const group = new THREE.Group();
+      // Translucent shell (language color)
+      group.add(
+        new THREE.Mesh(
+          new THREE.SphereGeometry(size * 1.6, 16, 16),
+          new THREE.MeshPhongMaterial({ color: langColor, transparent: true, opacity: 0.08, side: THREE.BackSide })
+        )
+      );
 
-    const coreMat = new THREE.MeshPhongMaterial({
-      color,
-      emissive: color,
-      emissiveIntensity: 0.7,
-      transparent: true,
-      opacity: 1,
-      shininess: 120,
-    });
-    nodeMaterials.current.set(gn.id, coreMat);
-    group.add(new THREE.Mesh(new THREE.SphereGeometry(size, 20, 20), coreMat));
+      // Soft inner glow (language color)
+      if (glowTexture.current) {
+        const innerGlow = new THREE.SpriteMaterial({
+          map: glowTexture.current,
+          color: langColor,
+          transparent: true,
+          opacity: 0.25,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        });
+        const innerSprite = new THREE.Sprite(innerGlow);
+        innerSprite.scale.set(size * 5, size * 5, 1);
+        group.add(innerSprite);
+      }
 
-    group.add(
-      new THREE.Mesh(
-        new THREE.SphereGeometry(size * 1.6, 16, 16),
-        new THREE.MeshPhongMaterial({ color, transparent: true, opacity: 0.1, side: THREE.BackSide })
-      )
-    );
+      // Domain-colored outer glow — makes the cluster color visible from a distance
+      if (glowTexture.current) {
+        const domainSpriteMat = new THREE.SpriteMaterial({
+          map: glowTexture.current,
+          color: glowColor,
+          transparent: true,
+          opacity: 0.45,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        });
+        domainGlowMaterials.current.set(gn.id, domainSpriteMat);
+        const domainSprite = new THREE.Sprite(domainSpriteMat);
+        domainSprite.scale.set(size * 10, size * 10, 1);
+        group.add(domainSprite);
+      }
 
-    if (glowTexture.current) {
-      const spriteMat = new THREE.SpriteMaterial({
-        map: glowTexture.current,
-        color,
-        transparent: true,
-        opacity: 0.5,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      });
-      glowMaterials.current.set(gn.id, spriteMat);
-      const sprite = new THREE.Sprite(spriteMat);
-      sprite.scale.set(size * 7, size * 7, 1);
-      group.add(sprite);
-    }
-
-    return group;
-  }, []);
+      return group;
+    },
+    // glowTexture is a ref, stable
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
 
   const getLinkColor = useCallback(
     (link: any): string => {
       const l = link as GraphLink;
-
       if (l.isFileLink) {
         return highlightNodes.size > 0 && highlightNodes.has(nodeId(l.source))
-          ? 'rgba(99,102,241,0.45)'
+          ? 'rgba(99,102,241,0.5)'
           : 'rgba(99,102,241,0.12)';
       }
-
       const key = linkKey(l);
-      const isHighlighted = highlightLinks.has(key);
-
-      // Default (no hover) — tint by link type so graph shows structure
-      if (highlightLinks.size === 0) {
-        if (l.type === 'topic') return 'rgba(165,180,252,0.22)';        // indigo — explicit tags
-        if (l.type === 'domain') {
-          const domainColor = l.sharedItems?.[0] ? DOMAINS[l.sharedItems[0] as keyof typeof DOMAINS]?.color : null;
-          return domainColor ? `${domainColor}30` : 'rgba(255,255,255,0.1)';
-        }
-        if (l.type === 'dependency') return 'rgba(251,191,36,0.15)';   // amber — shared code
-        if (l.type === 'time') return 'rgba(255,255,255,0.04)';         // nearly invisible
-        if (l.type === 'fork') return 'rgba(52,211,153,0.25)';          // green
-        return 'rgba(255,255,255,0.06)';
-      }
-
-      // Hover: highlighted links pop with type color
-      if (isHighlighted) {
-        if (l.type === 'topic') return 'rgba(165,180,252,0.85)';
-        if (l.type === 'domain') {
-          const domainColor = l.sharedItems?.[0] ? DOMAINS[l.sharedItems[0] as keyof typeof DOMAINS]?.color : null;
-          return domainColor ? `${domainColor}dd` : 'rgba(255,255,255,0.7)';
-        }
-        if (l.type === 'dependency') return 'rgba(251,191,36,0.9)';
-        if (l.type === 'fork') return 'rgba(52,211,153,0.9)';
-        return 'rgba(255,255,255,0.7)';
-      }
-
-      return 'rgba(255,255,255,0.012)'; // dimmed non-highlighted
+      if (highlightLinks.has(key)) return 'rgba(255,255,255,0.85)';
+      if (highlightLinks.size === 0) return 'rgba(255,255,255,0.12)';
+      return 'rgba(255,255,255,0.02)';
     },
     [highlightLinks, highlightNodes]
   );
@@ -302,7 +338,7 @@ export default function GraphCanvas({
     (link: any): number => {
       const l = link as GraphLink;
       if (l.isFileLink) return 0.4;
-      return highlightLinks.has(linkKey(l)) ? 1.5 : 0.5;
+      return highlightLinks.has(linkKey(l)) ? 2 : 0.6;
     },
     [highlightLinks]
   );
@@ -326,7 +362,7 @@ export default function GraphCanvas({
         backgroundColor="#040816"
         nodeThreeObject={nodeThreeObject}
         nodeThreeObjectExtend={false}
-        nodeLabel={(node: any) => (node as GraphNode).name}
+        nodeLabel={(node: any) => buildHoverLabel(node as GraphNode)}
         nodeRelSize={1}
         onNodeClick={handleNodeClick}
         onNodeHover={handleNodeHover}
@@ -339,9 +375,9 @@ export default function GraphCanvas({
         linkDirectionalParticleColor={() => 'rgba(255,255,255,0.9)'}
         showNavInfo={false}
         enableNodeDrag={false}
-        d3AlphaDecay={0.015}
-        d3VelocityDecay={0.25}
-        cooldownTicks={300}
+        d3AlphaDecay={0.012}
+        d3VelocityDecay={0.3}
+        cooldownTicks={400}
       />
     </div>
   );
