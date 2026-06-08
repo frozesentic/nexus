@@ -18,10 +18,11 @@ export async function fetchUserRepos(
   let page = 1;
 
   while (true) {
-    const res = await fetch(
-      `${BASE}/users/${username}/repos?per_page=100&sort=updated&page=${page}&type=owner`,
-      { headers }
-    );
+    // /user/repos includes private repos; /users/{u}/repos is public-only
+    const url = token
+      ? `${BASE}/user/repos?per_page=100&sort=updated&page=${page}&type=owner`
+      : `${BASE}/users/${username}/repos?per_page=100&sort=updated&page=${page}&type=owner`;
+    const res = await fetch(url, { headers });
     if (res.status === 404) throw new Error('USER_NOT_FOUND');
     if (res.status === 403) throw new Error('RATE_LIMIT');
     if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);

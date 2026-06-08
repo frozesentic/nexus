@@ -140,22 +140,33 @@ export function buildGraphData(repos: GithubRepo[]): GraphData {
         upsertLink(a.name, b.name, 'topic', sharedTopics.length * 3, sharedTopics);
       }
 
-      // 2. Tech keyword overlap (≥2 shared keywords = they're in the same ecosystem)
+      // 2. Tech keyword overlap (≥1 shared keyword = same ecosystem)
       const kwA = repoKeywords.get(a.name)!;
       const kwB = repoKeywords.get(b.name)!;
       const sharedKw = [...kwA].filter((k) => kwB.has(k));
-      if (sharedKw.length >= 2) {
+      if (sharedKw.length >= 1) {
         upsertLink(a.name, b.name, 'topic', sharedKw.length, sharedKw);
       }
 
-      // 3. Related language family (JS↔TS, Java↔Kotlin, etc.) — weak link
+      // 3. Same primary language (direct link)
+      if (a.language && a.language === b.language) {
+        upsertLink(a.name, b.name, 'language', 2);
+      }
+
+      // 4. Related language family (JS↔TS, Java↔Kotlin, etc.) — weak link
       const famA = a.language ? LANGUAGE_FAMILIES[a.language] : null;
       const famB = b.language ? LANGUAGE_FAMILIES[b.language] : null;
       if (famA && famB && famA === famB && a.language !== b.language) {
         upsertLink(a.name, b.name, 'language', 1);
       }
 
-      // 4. Fork relationship (very strong)
+      // 5. Time proximity — repos created within 3 months of each other
+      const gap = Math.abs(new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      const months = gap / (1000 * 60 * 60 * 24 * 30.5);
+      if (months < 1) upsertLink(a.name, b.name, 'language', 1.5);
+      else if (months < 3) upsertLink(a.name, b.name, 'language', 0.8);
+
+      // 6. Fork relationship (very strong)
       if (a.fork && b.full_name && a.full_name.includes(b.name)) {
         upsertLink(a.name, b.name, 'fork', 8);
       }
