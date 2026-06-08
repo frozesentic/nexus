@@ -40,9 +40,7 @@ export async function fetchUserRepos(
 export async function fetchUserProfile(username: string, token?: string) {
   const headers = buildHeaders(token);
   const res = await fetch(`${BASE}/users/${username}`, { headers });
-  if (res.status === 403 || res.status === 429) throw new Error('RATE_LIMIT');
-  if (res.status === 404) throw new Error('USER_NOT_FOUND');
-  if (!res.ok) throw new Error(`GitHub error ${res.status}`);
+  if (!res.ok) throw new Error('USER_NOT_FOUND');
   return res.json();
 }
 
