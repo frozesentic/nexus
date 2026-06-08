@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface Stats {
   totalRepos: number;
@@ -11,6 +11,7 @@ interface Stats {
 
 interface Props {
   stats: Stats;
+  loadingDeps?: boolean;
 }
 
 function Stat({ value, label }: { value: string | number; label: string }) {
@@ -26,7 +27,7 @@ function Dot() {
   return <span className="text-slate-700 text-xs">·</span>;
 }
 
-export default function StatsBar({ stats }: Props) {
+export default function StatsBar({ stats, loadingDeps }: Props) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -56,6 +57,26 @@ export default function StatsBar({ stats }: Props) {
           </span>
         </>
       )}
+
+      <AnimatePresence>
+        {loadingDeps && (
+          <motion.div
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -8 }}
+            className="flex items-center gap-1.5 ml-1"
+          >
+            <Dot />
+            <motion.div
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ background: '#fbbf24' }}
+              animate={{ opacity: [0.4, 1, 0.4] }}
+              transition={{ repeat: Infinity, duration: 1.2 }}
+            />
+            <span className="text-[11px] text-slate-500">scanning dependencies…</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="ml-auto text-[10px] text-slate-700 hidden md:flex items-center gap-4">
         <span>Scroll to zoom</span>

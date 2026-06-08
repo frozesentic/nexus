@@ -53,26 +53,15 @@ export interface Domain {
   icon: string;
 }
 
-export type NodeType = 'repo' | 'category' | 'file';
-export type CategoryType = 'topic' | 'domain';
-
 export interface GraphNode {
   id: string;
   name: string;
   val: number;
   color: string;
-  group: string;
-  nodeType: NodeType;
-  // Repo nodes
   repo?: GithubRepo;
+  group: string;
   domains?: DomainKey[];
-  primaryDomain?: DomainKey | null;
-  // Category nodes
-  categoryType?: CategoryType;
-  categoryKey?: string;
-  repoCount?: number;
-  parentDomainKey?: DomainKey;
-  // File nodes
+  // File node fields
   isFileNode?: boolean;
   fileType?: 'file' | 'dir';
   filePath?: string;
@@ -87,15 +76,15 @@ export interface GraphNode {
   vz?: number;
 }
 
-export type LinkType = 'topic' | 'domain' | 'file';
+export type LinkType = 'topic' | 'domain' | 'dependency' | 'time' | 'language' | 'fork' | 'file';
 
 export interface GraphLink {
   source: string | GraphNode;
   target: string | GraphNode;
   value: number;
   type: LinkType;
-  isFileLink?: boolean;
   sharedItems?: string[];
+  isFileLink?: boolean;
 }
 
 export interface GraphData {
