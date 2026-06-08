@@ -112,11 +112,24 @@ export default function GraphCanvas({
     });
   }, [graphData.nodes]);
 
-  // Clear material refs on data change
+  // Only clear material refs when the repo nodes themselves change (new user loaded),
+  // NOT when file nodes are added — react-force-graph-3d caches existing node objects
+  // and won't re-call nodeThreeObject for them, so clearing here would orphan the refs.
+  const prevRepoKey = useRef('');
   useEffect(() => {
-    nodeMaterials.current.clear();
-    glowMaterials.current.clear();
-  }, [graphData]);
+    const repoKey = graphData.nodes
+      .filter((n) => !n.isFileNode)
+      .map((n) => n.id)
+      .sort()
+      .join(',');
+    if (repoKey !== prevRepoKey.current) {
+      nodeMaterials.current.clear();
+      glowMaterials.current.clear();
+      setHighlightNodes(new Set());
+      setHighlightLinks(new Set());
+      prevRepoKey.current = repoKey;
+    }
+  }, [graphData.nodes]);
 
   const updateMaterials = useCallback((highlighted: Set<string>, filtered: Set<string>) => {
     nodeMaterials.current.forEach((mat, id) => {
