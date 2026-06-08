@@ -11,7 +11,7 @@ export default function App() {
   const [username, setUsername] = useState('');
   const [token, setToken] = useState('');
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
-  const { graphData, profile, loading, error, progress, fetch, reset } = useGithubData();
+  const { graphData, profile, loading, loadingDeps, error, progress, fetch, reset } = useGithubData();
 
   useEffect(() => {
     const savedUsername = localStorage.getItem('nexus-username') ?? '';
@@ -94,6 +94,7 @@ export default function App() {
               profile={profile}
               username={username}
               token={token || undefined}
+              loadingDeps={loadingDeps}
               selectedNode={selectedNode}
               onSelectNode={setSelectedNode}
               onBack={handleBack}

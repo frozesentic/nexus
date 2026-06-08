@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import type { GraphNode, RepoFile } from '../../types';
+import type { GraphNode, RepoFile, DomainKey } from '../../types';
+import { DOMAINS } from '../../lib/domainClassifier';
 
 interface Props {
   node: GraphNode | null;
@@ -176,6 +177,32 @@ export default function ProjectPanel({
                   </div>
                 ))}
               </div>
+
+              {/* Domains */}
+              {(node.domains?.length ?? 0) > 0 && (
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-2 font-medium">Subject</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {node.domains!.map((dk) => {
+                      const d = DOMAINS[dk as DomainKey];
+                      return d ? (
+                        <span
+                          key={dk}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium"
+                          style={{
+                            background: `${d.color}18`,
+                            border: `1px solid ${d.color}40`,
+                            color: d.color,
+                          }}
+                        >
+                          <span className="text-xs">{d.icon}</span>
+                          {d.name}
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Topics */}
               {(node.repo?.topics?.length ?? 0) > 0 && (

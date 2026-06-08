@@ -12,6 +12,7 @@ interface Props {
   profile: Record<string, unknown> | null;
   username: string;
   token?: string;
+  loadingDeps?: boolean;
   selectedNode: GraphNode | null;
   onSelectNode: (node: GraphNode | null) => void;
   onBack: () => void;
@@ -41,6 +42,7 @@ export default function GraphView({
   profile,
   username,
   token,
+  loadingDeps,
   selectedNode,
   onSelectNode,
   onBack,
@@ -181,7 +183,7 @@ export default function GraphView({
         onToggleExpand={() => selectedNode && toggleExpand(selectedNode.id)}
       />
 
-      <StatsBar stats={stats} />
+      <StatsBar stats={stats} loadingDeps={loadingDeps} />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
 import * as THREE from 'three';
 import type { GraphData, GraphNode, GraphLink } from '../../types';
+import { DOMAINS } from '../../lib/domainClassifier';
 
 interface Props {
   graphData: GraphData;
@@ -257,14 +258,42 @@ export default function GraphCanvas({
   const getLinkColor = useCallback(
     (link: any): string => {
       const l = link as GraphLink;
+
       if (l.isFileLink) {
         return highlightNodes.size > 0 && highlightNodes.has(nodeId(l.source))
-          ? 'rgba(99,102,241,0.4)'
-          : 'rgba(99,102,241,0.15)';
+          ? 'rgba(99,102,241,0.45)'
+          : 'rgba(99,102,241,0.12)';
       }
+
       const key = linkKey(l);
-      if (highlightLinks.size === 0) return 'rgba(255,255,255,0.08)';
-      return highlightLinks.has(key) ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.015)';
+      const isHighlighted = highlightLinks.has(key);
+
+      // Default (no hover) — tint by link type so graph shows structure
+      if (highlightLinks.size === 0) {
+        if (l.type === 'topic') return 'rgba(165,180,252,0.22)';        // indigo — explicit tags
+        if (l.type === 'domain') {
+          const domainColor = l.sharedItems?.[0] ? DOMAINS[l.sharedItems[0] as keyof typeof DOMAINS]?.color : null;
+          return domainColor ? `${domainColor}30` : 'rgba(255,255,255,0.1)';
+        }
+        if (l.type === 'dependency') return 'rgba(251,191,36,0.15)';   // amber — shared code
+        if (l.type === 'time') return 'rgba(255,255,255,0.04)';         // nearly invisible
+        if (l.type === 'fork') return 'rgba(52,211,153,0.25)';          // green
+        return 'rgba(255,255,255,0.06)';
+      }
+
+      // Hover: highlighted links pop with type color
+      if (isHighlighted) {
+        if (l.type === 'topic') return 'rgba(165,180,252,0.85)';
+        if (l.type === 'domain') {
+          const domainColor = l.sharedItems?.[0] ? DOMAINS[l.sharedItems[0] as keyof typeof DOMAINS]?.color : null;
+          return domainColor ? `${domainColor}dd` : 'rgba(255,255,255,0.7)';
+        }
+        if (l.type === 'dependency') return 'rgba(251,191,36,0.9)';
+        if (l.type === 'fork') return 'rgba(52,211,153,0.9)';
+        return 'rgba(255,255,255,0.7)';
+      }
+
+      return 'rgba(255,255,255,0.012)'; // dimmed non-highlighted
     },
     [highlightLinks, highlightNodes]
   );

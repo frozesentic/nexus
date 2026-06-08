@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface Stats {
   totalRepos: number;
@@ -6,52 +6,82 @@ interface Stats {
   totalConnections: number;
   totalStars: number;
   topLanguage: string;
+  totalDomains: number;
 }
 
 interface Props {
   stats: Stats;
+  loadingDeps?: boolean;
 }
 
 function Stat({ value, label }: { value: string | number; label: string }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
       <span className="text-slate-200 text-sm font-semibold tabular-nums">{value}</span>
       <span className="text-slate-500 text-xs">{label}</span>
     </div>
   );
 }
 
-function Divider() {
+function Dot() {
   return <span className="text-slate-700 text-xs">·</span>;
 }
 
-export default function StatsBar({ stats }: Props) {
+export default function StatsBar({ stats, loadingDeps }: Props) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.5, duration: 0.4 }}
-      className="absolute bottom-0 left-0 right-0 z-20 flex items-center justify-center gap-4 py-2.5 px-5"
+      className="absolute bottom-0 left-0 right-0 z-20 flex items-center gap-3 py-2.5 px-5"
       style={{ background: 'linear-gradient(to top, rgba(4,8,22,0.85) 0%, transparent 100%)' }}
     >
-      <Stat value={stats.totalRepos} label="repositories" />
-      <Divider />
+      <Stat value={stats.totalRepos} label="repos" />
+      <Dot />
       <Stat value={stats.totalLanguages} label="languages" />
-      <Divider />
-      <Stat value={stats.totalConnections} label="connections" />
-      <Divider />
-      <Stat value={stats.totalStars.toLocaleString()} label="total stars" />
-      {stats.topLanguage && (
+      {stats.totalDomains > 0 && (
         <>
-          <Divider />
-          <div className="flex items-center gap-1.5 text-xs text-slate-500">
-            Top language:
-            <span className="text-slate-300 font-medium">{stats.topLanguage}</span>
-          </div>
+          <Dot />
+          <Stat value={stats.totalDomains} label="domains" />
         </>
       )}
-      <div className="ml-auto text-[10px] text-slate-700 hidden md:block">
-        Scroll to zoom · Drag to rotate · Click to explore
+      <Dot />
+      <Stat value={stats.totalConnections} label="connections" />
+      <Dot />
+      <Stat value={stats.totalStars.toLocaleString()} label="stars" />
+      {stats.topLanguage && (
+        <>
+          <Dot />
+          <span className="text-xs text-slate-500">
+            Top: <span className="text-slate-300 font-medium">{stats.topLanguage}</span>
+          </span>
+        </>
+      )}
+
+      <AnimatePresence>
+        {loadingDeps && (
+          <motion.div
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -8 }}
+            className="flex items-center gap-1.5 ml-1"
+          >
+            <Dot />
+            <motion.div
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ background: '#fbbf24' }}
+              animate={{ opacity: [0.4, 1, 0.4] }}
+              transition={{ repeat: Infinity, duration: 1.2 }}
+            />
+            <span className="text-[11px] text-slate-500">scanning dependencies…</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="ml-auto text-[10px] text-slate-700 hidden md:flex items-center gap-4">
+        <span>Scroll to zoom</span>
+        <span>Drag to rotate</span>
+        <span>Click to explore</span>
       </div>
     </motion.div>
   );
