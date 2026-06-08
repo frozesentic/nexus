@@ -4,6 +4,8 @@
 
 Nexus connects to your GitHub profile and maps every repository as an interactive 3D node graph — inspired by how Wikipedia visualizes article relationships. Related projects cluster together, connections form based on shared topics and tech stacks, and you can drill into any project to explore its file tree.
 
+<img width="960" height="540" alt="zeggrgr" src="https://github.com/user-attachments/assets/43d79d42-e9c4-478d-927e-e70b3aedc2c1" />
+
 ---
 
 ## Features
