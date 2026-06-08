@@ -72,28 +72,41 @@ export default function GraphCanvas({
     }
   }, [graphData.nodes.length]);
 
-  // Language clustering force: same-language repo nodes are attracted to each other
+  // Force tuning: spread nodes out evenly without letting isolates drift too far
   useEffect(() => {
     if (!fgRef.current) return;
-    const repoNodes = graphData.nodes.filter((n) => !n.isFileNode);
 
+    // Strong repulsion so nodes don't pile up
+    fgRef.current.d3Force('charge')?.strength(-120);
+
+    // Short, consistent link distance keeps connected clusters tight
+    fgRef.current.d3Force('link')?.distance(40).strength(0.8);
+
+    // Gentle pull toward origin so isolated nodes don't fly to the edges
+    fgRef.current.d3Force('center')?.strength(0.05);
+
+    // Soft clustering: same-language nodes drift toward each other (weaker than before)
+    const repoNodes = graphData.nodes.filter((n) => !n.isFileNode);
     fgRef.current.d3Force('cluster', (alpha: number) => {
       for (let i = 0; i < repoNodes.length; i++) {
         for (let j = i + 1; j < repoNodes.length; j++) {
+          if (repoNodes[i].group !== repoNodes[j].group || repoNodes[i].group === 'Other') continue;
           const a = repoNodes[i] as any;
           const b = repoNodes[j] as any;
-          if (repoNodes[i].group !== repoNodes[j].group || repoNodes[i].group === 'Other') continue;
           const dx = (b.x ?? 0) - (a.x ?? 0);
           const dy = (b.y ?? 0) - (a.y ?? 0);
           const dz = (b.z ?? 0) - (a.z ?? 0);
           const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-          const strength = alpha * 0.06;
-          a.vx = (a.vx ?? 0) + (dx / dist) * strength;
-          a.vy = (a.vy ?? 0) + (dy / dist) * strength;
-          a.vz = (a.vz ?? 0) + (dz / dist) * strength;
-          b.vx = (b.vx ?? 0) - (dx / dist) * strength;
-          b.vy = (b.vy ?? 0) - (dy / dist) * strength;
-          b.vz = (b.vz ?? 0) - (dz / dist) * strength;
+          // Only attract when far apart (> 60 units), repel when too close (< 20)
+          if (dist > 20 && dist < 120) {
+            const strength = alpha * 0.03;
+            a.vx = (a.vx ?? 0) + (dx / dist) * strength;
+            a.vy = (a.vy ?? 0) + (dy / dist) * strength;
+            a.vz = (a.vz ?? 0) + (dz / dist) * strength;
+            b.vx = (b.vx ?? 0) - (dx / dist) * strength;
+            b.vy = (b.vy ?? 0) - (dy / dist) * strength;
+            b.vz = (b.vz ?? 0) - (dz / dist) * strength;
+          }
         }
       }
     });
@@ -310,9 +323,9 @@ export default function GraphCanvas({
         linkDirectionalParticleColor={() => 'rgba(255,255,255,0.9)'}
         showNavInfo={false}
         enableNodeDrag={false}
-        d3AlphaDecay={0.015}
-        d3VelocityDecay={0.25}
-        cooldownTicks={300}
+        d3AlphaDecay={0.02}
+        d3VelocityDecay={0.35}
+        cooldownTicks={200}
       />
     </div>
   );
