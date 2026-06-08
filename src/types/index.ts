@@ -29,30 +29,6 @@ export interface RepoFile {
   download_url: string | null;
 }
 
-export type DomainKey =
-  | 'web-app'
-  | 'backend-api'
-  | 'data-analysis'
-  | 'machine-learning'
-  | 'game'
-  | 'cli-tool'
-  | 'library'
-  | 'mobile'
-  | 'hardware-iot'
-  | 'realtime'
-  | 'devtools'
-  | 'bot'
-  | 'database'
-  | 'blockchain'
-  | 'security';
-
-export interface Domain {
-  key: DomainKey;
-  name: string;
-  color: string;
-  icon: string;
-}
-
 export interface GraphNode {
   id: string;
   name: string;
@@ -60,7 +36,6 @@ export interface GraphNode {
   color: string;
   repo?: GithubRepo;
   group: string;
-  domains?: DomainKey[];
   // File node fields
   isFileNode?: boolean;
   fileType?: 'file' | 'dir';
@@ -76,13 +51,11 @@ export interface GraphNode {
   vz?: number;
 }
 
-export type LinkType = 'topic' | 'domain' | 'dependency' | 'time' | 'language' | 'fork' | 'file';
-
 export interface GraphLink {
   source: string | GraphNode;
   target: string | GraphNode;
   value: number;
-  type: LinkType;
+  type: 'language' | 'topic' | 'fork' | 'file';
   sharedItems?: string[];
   isFileLink?: boolean;
 }

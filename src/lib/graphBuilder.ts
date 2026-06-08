@@ -1,7 +1,4 @@
-import type { GithubRepo, GraphData, GraphNode, GraphLink, DomainKey } from '../types';
-import { classifyRepo, DOMAINS } from './domainClassifier';
-
-export { DOMAINS };
+import type { GithubRepo, GraphData, GraphNode, GraphLink } from '../types';
 
 export const LANGUAGE_COLORS: Record<string, string> = {
   JavaScript: '#f7df1e',
@@ -35,11 +32,10 @@ export const LANGUAGE_COLORS: Record<string, string> = {
   OCaml: '#ef7a08',
   Clojure: '#db5855',
   Elm: '#60B5CC',
-  Solidity: '#AA6746',
   default: '#6b7280',
 };
 
-// Languages in the same family → small pull toward each other
+// Languages that are closely related → weak connection even without shared topics
 const LANGUAGE_FAMILIES: Record<string, string> = {
   JavaScript: 'web-scripting',
   TypeScript: 'web-scripting',
@@ -54,6 +50,7 @@ const LANGUAGE_FAMILIES: Record<string, string> = {
   'C++': 'c-family',
   'C#': 'dotnet',
   'F#': 'dotnet',
+  Ruby: 'ruby',
   Swift: 'apple',
   'Objective-C': 'apple',
   HTML: 'web-markup',
@@ -62,97 +59,105 @@ const LANGUAGE_FAMILIES: Record<string, string> = {
   Sass: 'web-markup',
 };
 
+// Technology keywords to extract from name + description
+const TECH_KEYWORDS = [
+  'react', 'vue', 'angular', 'svelte', 'next', 'nuxt', 'remix',
+  'node', 'express', 'fastify', 'nestjs',
+  'django', 'flask', 'fastapi', 'rails', 'laravel', 'spring',
+  'tensorflow', 'pytorch', 'keras', 'sklearn', 'ml', 'ai', 'machine learning',
+  'docker', 'kubernetes', 'k8s', 'aws', 'gcp', 'azure', 'serverless',
+  'mongodb', 'postgres', 'postgresql', 'mysql', 'sqlite', 'redis',
+  'graphql', 'rest', 'websocket', 'grpc',
+  'game', 'opengl', 'unity', 'pygame', 'godot',
+  'cli', 'terminal', 'shell', 'bash',
+  'api', 'library', 'framework', 'plugin', 'extension',
+  'mobile', 'android', 'ios', 'flutter', 'react native',
+  'blockchain', 'web3', 'crypto', 'nft',
+  'discord', 'slack', 'telegram', 'bot',
+  'scraper', 'crawler', 'automation',
+];
+
+function extractKeywords(repo: GithubRepo): Set<string> {
+  const text = `${repo.name} ${repo.description ?? ''} ${repo.topics.join(' ')}`.toLowerCase();
+  return new Set(TECH_KEYWORDS.filter((kw) => text.includes(kw)));
+}
+
 export function getLanguageColor(language: string | null): string {
   if (!language) return LANGUAGE_COLORS.default;
   return LANGUAGE_COLORS[language] ?? LANGUAGE_COLORS.default;
 }
 
-function quarterKey(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
-}
-
-function monthsApart(isoA: string, isoB: string): number {
-  return Math.abs(new Date(isoA).getTime() - new Date(isoB).getTime()) / (1000 * 60 * 60 * 24 * 30.5);
-}
-
 export function buildGraphData(repos: GithubRepo[]): GraphData {
   const filtered = repos.filter((r) => !r.archived);
 
-  // Pre-compute domains for each repo
-  const repoDomains = new Map<string, DomainKey[]>();
-  filtered.forEach((r) => repoDomains.set(r.name, classifyRepo(r)));
-
   const nodes: GraphNode[] = filtered.map((repo) => {
-    const val = Math.max(2, Math.log2(repo.stargazers_count + repo.forks_count + 2) * 4);
+    const stars = repo.stargazers_count;
+    const forks = repo.forks_count;
+    const val = Math.max(2, Math.log2(stars + forks + 2) * 4);
     return {
       id: repo.name,
       name: repo.name,
       val,
       color: getLanguageColor(repo.language),
       group: repo.language ?? 'Other',
-      domains: repoDomains.get(repo.name) ?? [],
       repo,
     };
   });
 
   const links: GraphLink[] = [];
-  const linkMap = new Map<string, GraphLink>();
+  const seenKeys = new Map<string, GraphLink>();
 
-  const upsert = (
+  const upsertLink = (
     a: string,
     b: string,
     type: GraphLink['type'],
     value: number,
-    shared?: string[]
+    sharedItems?: string[]
   ) => {
     const key = [a, b].sort().join('|||');
-    if (linkMap.has(key)) {
-      const ex = linkMap.get(key)!;
-      ex.value += value;
-      if (shared) ex.sharedItems = [...(ex.sharedItems ?? []), ...shared];
+    if (seenKeys.has(key)) {
+      const existing = seenKeys.get(key)!;
+      existing.value += value;
+      if (sharedItems) existing.sharedItems = [...(existing.sharedItems ?? []), ...sharedItems];
     } else {
-      const link: GraphLink = { source: a, target: b, value, type, sharedItems: shared };
-      linkMap.set(key, link);
+      const link: GraphLink = { source: a, target: b, value, type, sharedItems };
+      seenKeys.set(key, link);
       links.push(link);
     }
   };
+
+  const repoKeywords = new Map<string, Set<string>>();
+  filtered.forEach((r) => repoKeywords.set(r.name, extractKeywords(r)));
 
   for (let i = 0; i < filtered.length; i++) {
     for (let j = i + 1; j < filtered.length; j++) {
       const a = filtered[i];
       const b = filtered[j];
 
-      // 1. Shared GitHub topics — highest confidence (user-curated signal)
+      // 1. Shared topics (strongest — explicit human-assigned tags)
       const sharedTopics = a.topics.filter((t) => b.topics.includes(t));
       if (sharedTopics.length > 0) {
-        upsert(a.name, b.name, 'topic', sharedTopics.length * 4, sharedTopics);
+        upsertLink(a.name, b.name, 'topic', sharedTopics.length * 3, sharedTopics);
       }
 
-      // 2. Shared semantic domain — connects projects that solve the same class of problem
-      const domainsA = repoDomains.get(a.name) ?? [];
-      const domainsB = repoDomains.get(b.name) ?? [];
-      const sharedDomains = domainsA.filter((d) => domainsB.includes(d));
-      if (sharedDomains.length > 0) {
-        upsert(a.name, b.name, 'domain', sharedDomains.length * 3, sharedDomains);
+      // 2. Tech keyword overlap (≥2 shared keywords = they're in the same ecosystem)
+      const kwA = repoKeywords.get(a.name)!;
+      const kwB = repoKeywords.get(b.name)!;
+      const sharedKw = [...kwA].filter((k) => kwB.has(k));
+      if (sharedKw.length >= 2) {
+        upsertLink(a.name, b.name, 'topic', sharedKw.length, sharedKw);
       }
 
-      // 3. Time proximity — repos built around the same time are likely part of the same phase
-      const gap = monthsApart(a.created_at, b.created_at);
-      if (gap < 1) upsert(a.name, b.name, 'time', 2);
-      else if (gap < 3) upsert(a.name, b.name, 'time', 1.5);
-      else if (gap < 6) upsert(a.name, b.name, 'time', 0.8);
-
-      // 4. Related language family — weak pull for JS↔TS, Java↔Kotlin, etc.
-      const famA = LANGUAGE_FAMILIES[a.language ?? ''];
-      const famB = LANGUAGE_FAMILIES[b.language ?? ''];
+      // 3. Related language family (JS↔TS, Java↔Kotlin, etc.) — weak link
+      const famA = a.language ? LANGUAGE_FAMILIES[a.language] : null;
+      const famB = b.language ? LANGUAGE_FAMILIES[b.language] : null;
       if (famA && famB && famA === famB && a.language !== b.language) {
-        upsert(a.name, b.name, 'language', 0.8);
+        upsertLink(a.name, b.name, 'language', 1);
       }
 
-      // 5. Fork relationship
-      if (a.fork && a.full_name.toLowerCase().includes(b.name.toLowerCase())) {
-        upsert(a.name, b.name, 'fork', 8);
+      // 4. Fork relationship (very strong)
+      if (a.fork && b.full_name && a.full_name.includes(b.name)) {
+        upsertLink(a.name, b.name, 'fork', 8);
       }
     }
   }
@@ -160,30 +165,9 @@ export function buildGraphData(repos: GithubRepo[]): GraphData {
   return { nodes, links };
 }
 
-/** Merge dependency-based links into existing graph data (called progressively after initial load) */
-export function applyDependencyLinks(
-  existing: GraphData,
-  depLinks: GraphLink[]
-): GraphData {
-  if (depLinks.length === 0) return existing;
-  const existingKeys = new Set(
-    existing.links.map((l) => {
-      const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
-      const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
-      return [s, t].sort().join('|||');
-    })
-  );
-  const newLinks = depLinks.filter((l) => {
-    const key = [l.source as string, l.target as string].sort().join('|||');
-    return !existingKeys.has(key);
-  });
-  return { ...existing, links: [...existing.links, ...newLinks] };
-}
-
 export function getGraphStats(data: GraphData) {
   const repoNodes = data.nodes.filter((n) => !n.isFileNode);
   const languages = new Set(repoNodes.map((n) => n.group).filter((g) => g !== 'Other'));
-  const allDomains = new Set(repoNodes.flatMap((n) => n.domains ?? []));
   const totalStars = repoNodes.reduce((s, n) => s + (n.repo?.stargazers_count ?? 0), 0);
   const topLanguage = [...languages].reduce(
     (top, lang) => {
@@ -199,6 +183,5 @@ export function getGraphStats(data: GraphData) {
     totalConnections: data.links.filter((l) => !l.isFileLink).length,
     totalStars,
     topLanguage: topLanguage.lang,
-    totalDomains: allDomains.size,
   };
 }
