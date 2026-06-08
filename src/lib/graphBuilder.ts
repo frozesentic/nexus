@@ -87,7 +87,7 @@ export function getLanguageColor(language: string | null): string {
   return LANGUAGE_COLORS[language] ?? LANGUAGE_COLORS.default;
 }
 
-const MAX_REPOS = 500;
+const MAX_REPOS = 300;
 const MAX_LINKS_PER_NODE = 8;
 
 export function buildGraphData(repos: GithubRepo[]): GraphData {
