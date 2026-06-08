@@ -87,8 +87,15 @@ export function getLanguageColor(language: string | null): string {
   return LANGUAGE_COLORS[language] ?? LANGUAGE_COLORS.default;
 }
 
+const MAX_REPOS = 300;
+const MAX_LINKS_PER_NODE = 8;
+
 export function buildGraphData(repos: GithubRepo[]): GraphData {
-  const filtered = repos.filter((r) => !r.archived);
+  const nonArchived = repos.filter((r) => !r.archived);
+  // Sort by most recently pushed, cap to keep the graph renderable
+  const filtered = nonArchived
+    .sort((a, b) => new Date(b.pushed_at).getTime() - new Date(a.pushed_at).getTime())
+    .slice(0, MAX_REPOS);
 
   const nodes: GraphNode[] = filtered.map((repo) => {
     const stars = repo.stargazers_count;
@@ -173,10 +180,27 @@ export function buildGraphData(repos: GithubRepo[]): GraphData {
     }
   }
 
-  return { nodes, links };
+  // Prune weak links: keep at most MAX_LINKS_PER_NODE connections per node
+  const linkCount = new Map<string, number>();
+  const pruned = links
+    .sort((a, b) => b.value - a.value) // strongest first
+    .filter((l) => {
+      const src = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+      const tgt = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+      const cs = linkCount.get(src) ?? 0;
+      const ct = linkCount.get(tgt) ?? 0;
+      if (cs >= MAX_LINKS_PER_NODE || ct >= MAX_LINKS_PER_NODE) return false;
+      linkCount.set(src, cs + 1);
+      linkCount.set(tgt, ct + 1);
+      return true;
+    });
+
+  return { nodes, links: pruned };
 }
 
-export function getGraphStats(data: GraphData) {
+export { MAX_REPOS };
+
+export function getGraphStats(data: GraphData, totalFetched?: number) {
   const repoNodes = data.nodes.filter((n) => !n.isFileNode);
   const languages = new Set(repoNodes.map((n) => n.group).filter((g) => g !== 'Other'));
   const totalStars = repoNodes.reduce((s, n) => s + (n.repo?.stargazers_count ?? 0), 0);
@@ -190,6 +214,7 @@ export function getGraphStats(data: GraphData) {
 
   return {
     totalRepos: repoNodes.length,
+    totalFetched: totalFetched ?? repoNodes.length,
     totalLanguages: languages.size,
     totalConnections: data.links.filter((l) => !l.isFileLink).length,
     totalStars,

@@ -117,7 +117,10 @@ export default function GraphView({
     };
   }, [graphData, expandedRepos, repoFiles]);
 
-  const stats = useMemo(() => getGraphStats(combinedGraphData), [combinedGraphData]);
+  const stats = useMemo(
+    () => getGraphStats(combinedGraphData, (graphData as any)._totalFetched),
+    [combinedGraphData, graphData]
+  );
   const languages = useMemo(
     () =>
       [...new Set(graphData.nodes.map((n) => n.repo?.language).filter(Boolean) as string[])].sort(),

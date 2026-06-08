@@ -42,6 +42,8 @@ export function useGithubData(): UseGithubDataReturn {
       await new Promise((r) => setTimeout(r, 600));
 
       const graph = buildGraphData(repos);
+      // Attach total fetched count so StatsBar can show a cap notice
+      (graph as any)._totalFetched = repos.filter((r) => !r.archived).length;
       setGraphData(graph);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';

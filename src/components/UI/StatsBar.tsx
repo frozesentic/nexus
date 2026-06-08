@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 
 interface Stats {
   totalRepos: number;
+  totalFetched: number;
   totalLanguages: number;
   totalConnections: number;
   totalStars: number;
@@ -26,6 +27,8 @@ function Divider() {
 }
 
 export default function StatsBar({ stats }: Props) {
+  const capped = stats.totalFetched > stats.totalRepos;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -34,7 +37,10 @@ export default function StatsBar({ stats }: Props) {
       className="absolute bottom-0 left-0 right-0 z-20 flex items-center justify-center gap-4 py-2.5 px-5"
       style={{ background: 'linear-gradient(to top, rgba(4,8,22,0.85) 0%, transparent 100%)' }}
     >
-      <Stat value={stats.totalRepos} label="repositories" />
+      <Stat
+        value={capped ? `${stats.totalRepos} of ${stats.totalFetched}` : stats.totalRepos}
+        label={capped ? 'repos (most recent)' : 'repositories'}
+      />
       <Divider />
       <Stat value={stats.totalLanguages} label="languages" />
       <Divider />
